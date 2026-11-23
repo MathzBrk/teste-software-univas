@@ -128,3 +128,81 @@ das linhas 8 e 9 da tabela RN01 já cobrem esse comportamento.
 | Regra | Comportamento especificado | Comportamento observado | Teste que evidencia |
 |-------|----------------------------|-------------------------|---------------------|
 | RN01  | `PENDING → CANCELLED` é permitido ("uma tarefa pendente pode ser cancelada antes de ser iniciada") | `canTransition('PENDING', 'CANCELLED')` retorna `false` | `taskRules.test.ts` › `permite cancelar uma tarefa pendente antes de ser iniciada` (`it.fails`) |
+
+---
+
+# Aula 11 — Testes unitários do frontend
+
+**Ferramenta de IA utilizada:** Claude Code
+**Unidade testada:** `frontend/src/components/Users.tsx` — RF01, RF02, RF04, RF05, RF06 e RF07
+(RF03 é coberto pelo teste de referência `Users.error.test.tsx`)
+
+## 1. Tabela de casos (elaborada antes de usar a IA)
+
+| #  | Requisito | Preparação (mock)                                   | Ação do usuário                                   | Resultado esperado                                              |
+|----|-----------|-----------------------------------------------------|---------------------------------------------------|-----------------------------------------------------------------|
+| 1  | RF01      | `api.get` não resolve (pendente)                    | —                                                 | Texto "Carregando usuários..." visível                          |
+| 2  | RF01      | `api.get` devolve 1 usuário                         | —                                                 | Usuário visível e texto de carregamento removido                |
+| 3  | RF02      | `api.get` devolve 2 usuários                        | —                                                 | Tabela com 2 linhas de usuário (+ cabeçalho)                    |
+| 4  | RF02      | `api.get` devolve Ana com 2 tarefas                 | —                                                 | Nome, email e "2" na mesma linha                                |
+| 5  | RF02      | usuário com `tasks: []`                             | —                                                 | "0" na coluna de tarefas (valor-limite)                         |
+| 6  | RF02      | usuário sem o campo `tasks`                         | —                                                 | "0" na coluna de tarefas                                        |
+| 7  | RF02      | `api.get` devolve lista vazia                       | —                                                 | Nenhuma linha de usuário (só o cabeçalho)                       |
+| 8  | RF04      | `api.get` devolve lista vazia                       | Clicar em "Adicionar Usuário"                     | Campos Nome e Email e botão "Criar" visíveis                    |
+| 9  | RF04      | `api.get` devolve lista vazia                       | —                                                 | Formulário não aparece antes do clique                          |
+| 10 | RF05      | `api.get` devolve lista vazia                       | Abrir, digitar, clicar em "Cancelar"              | Formulário fechado                                              |
+| 11 | RF05      | `api.get` devolve lista vazia                       | Abrir, digitar, "Cancelar", abrir de novo         | Campos Nome e Email vazios                                      |
+| 12 | RF06      | `api.get` devolve Ana e Bruno                       | Clicar em "Editar" na linha do Bruno              | Formulário preenchido com nome e email do Bruno                 |
+| 13 | RF06      | `api.get` devolve Ana                               | Clicar em "Editar"                                | Botão "Atualizar" visível e "Criar" ausente                     |
+| 14 | RF07      | `api.get` devolve lista vazia                       | Clicar em "Adicionar Usuário"                     | Campo Nome localizado pelo rótulo (`getByLabelText`)            |
+| 15 | RF07      | `api.get` devolve lista vazia                       | Clicar em "Adicionar Usuário"                     | Campo Email localizado pelo rótulo (`getByLabelText`)           |
+
+## 2. Prompt utilizado
+
+```
+Contexto: componente frontend/src/components/Users.tsx, requisitos RF01, RF02, RF04,
+RF05, RF06 e RF07 de docs/especificacao.md. Use Users.error.test.tsx como modelo.
+
+Tarefa: escreva testes em frontend/tests/unit/Users.test.tsx.
+
+Casos obrigatórios (definidos por mim): a tabela abaixo.
+<tabela da seção 1>
+
+Restrições: siga o AGENTS.md. Use getByRole ou getByLabelText e userEvent.
+Simule a API com vi.spyOn(api, 'get'). Não altere src/.
+Se algum teste não puder passar sem alterar src/, interrompa e explique o motivo.
+
+Saída: execute npm test e relacione cada teste a uma linha da tabela.
+```
+
+## 3. Revisão do teste gerado
+
+| Problema encontrado no teste gerado | Ajuste solicitado ou realizado |
+|-------------------------------------|--------------------------------|
+| Na primeira execução, 11 testes falharam com "Found multiple elements": sem `globals: true` no Vitest, a Testing Library não desmonta o componente entre os testes e as renderizações se acumulam. | Adicionado `afterEach(() => cleanup())` no arquivo de teste. Esse primeiro resultado também fez os testes do RF07 com `it.fails` "passarem" pelo motivo errado. Depois do ajuste, confirmei que eles falham com "no form control was found associated to that label". |
+| Os testes do RF07 falham: os `<label>` não estão associados aos campos (sem `htmlFor`/`id`). | Valor esperado mantido (vem da spec). Testes marcados com `it.fails` e comentário indicando o defeito do RF07. |
+| Se RF04, RF05 e RF06 localizassem os campos com `getByLabelText`, todos falhariam por causa do defeito do RF07, e as sabotagens desses requisitos não seriam detectadas. | Nesses testes os campos são localizados por `getAllByRole('textbox')` e pelos textos "Nome:"/"Email:". Assim o defeito fica isolado nos testes do RF07. |
+| Checklist conferido: sem `container.querySelector`, sem `fireEvent`, sem snapshot, sem `setTimeout`, sem `data-testid`, sem verificar estado interno (`showForm`), `git status` sem alterações em `src/`. | Nenhum ajuste necessário. |
+
+## 4. Resultados
+
+- Testes criados: 15 em `Users.test.tsx` | aprovados: 13 | reprovados: 2 (marcados com `it.fails` — defeito RF07)
+- Com o teste de referência (RF03): 16 testes, 14 aprovados e 2 `it.fails`.
+- Cobertura de linhas de `Users.tsx`: 66,67 %. As linhas não cobertas são `handleSubmit` (criar/salvar usuário) e `handleDelete`, que não fazem parte dos requisitos desta atividade.
+
+Sabotagem controlada (uma alteração por vez em `Users.tsx`, desfeita antes da próxima):
+
+| Sabotagem em `Users.tsx`                                | Requisito | Detectada? | Testes que falharam |
+|---------------------------------------------------------|-----------|------------|---------------------|
+| Remover `setShowForm(false)` de `handleCancel`          | RF05      | Sim        | `fecha o formulário ao clicar em "Cancelar"` |
+| Trocar o texto `'Criar'` por `'Salvar'`                 | RF04      | Sim        | `exibe os campos Nome e Email e o botão Criar...` |
+| Trocar `user.tasks?.length \|\| 0` por `1`              | RF02      | Sim        | `exibe nome, email e quantidade de tarefas na mesma linha`; os dois casos de `exibe 0 tarefas...` |
+| Alterar a mensagem de erro de carregamento              | RF03      | Sim        | `exibe mensagem de erro quando a API falha` (teste de referência) |
+
+Resultado: 4 de 4 sabotagens detectadas. Nenhum caso novo precisou entrar na tabela.
+
+## 5. Defeitos encontrados (divergências entre especificação e código)
+
+| Regra | Comportamento especificado | Comportamento observado | Teste que evidencia |
+|-------|----------------------------|-------------------------|---------------------|
+| RF07  | Todo campo do formulário associado ao seu rótulo, localizável por `getByLabelText` | `<label>Nome:</label>` e `<label>Email:</label>` sem `htmlFor`, e inputs sem `id`: nenhum campo é encontrado pelo rótulo | `Users.test.tsx` › `localiza o campo Nome pelo texto do rótulo` e `localiza o campo Email pelo texto do rótulo` (`it.fails`) |
