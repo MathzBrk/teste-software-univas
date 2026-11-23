@@ -206,3 +206,124 @@ Resultado: 4 de 4 sabotagens detectadas. Nenhum caso novo precisou entrar na tab
 | Regra | Comportamento especificado | Comportamento observado | Teste que evidencia |
 |-------|----------------------------|-------------------------|---------------------|
 | RF07  | Todo campo do formulário associado ao seu rótulo, localizável por `getByLabelText` | `<label>Nome:</label>` e `<label>Email:</label>` sem `htmlFor`, e inputs sem `id`: nenhum campo é encontrado pelo rótulo | `Users.test.tsx` › `localiza o campo Nome pelo texto do rótulo` e `localiza o campo Email pelo texto do rótulo` (`it.fails`) |
+
+---
+
+# Aula 12 — Testes de integração
+
+**Ferramenta de IA utilizada:** Claude Code
+**Escopo:** backend API03, API04 e API05 (Supertest + PostgreSQL `teste_software_test_db`);
+frontend RF08 e RF09 do componente `Users` (Testing Library + MSW).
+
+## 1. Tabela de casos (elaborada antes de usar a IA)
+
+### Backend
+
+| #  | Contrato | Estado inicial                                   | Requisição                                      | Resposta esperada | Efeito no banco                              |
+|----|----------|--------------------------------------------------|-------------------------------------------------|-------------------|----------------------------------------------|
+| 1  | API03    | Categoria sem tarefas                            | `DELETE /api/categories/:id`                    | `200`             | Categoria removida                           |
+| 2  | API03    | Categoria com 1 tarefa                           | `DELETE /api/categories/:id`                    | `400`             | Categoria e tarefa mantidas                  |
+| 3  | API03    | Nenhuma categoria                                | `DELETE /api/categories/inexistente`            | `404`             | Nenhum                                       |
+| 4  | API04    | Banco vazio                                      | `POST /api/categories` `{ name: "Estudos" }`    | `201`             | 1 categoria criada                           |
+| 5  | API04    | Existe `"trabalho"`                              | `POST` `{ name: "Trabalhos" }`                  | `201`             | 2 categorias (valor-limite: nome parecido)   |
+| 6  | API04    | Existe `"trabalho"`                              | `POST` `{ name: "trabalho" }`                   | `409`             | Nenhuma categoria criada                     |
+| 7  | API04    | Existe `" trabalho "`                            | `POST` `{ name: "Trabalho" }`                   | `409`             | Nenhuma categoria criada                     |
+| 8  | API04    | Existe `"trabalho da faculdade"`                 | `POST` `{ name: "  Trabalho   da\tFaculdade " }`| `409`             | Nenhuma categoria criada                     |
+| 9  | API05    | Tarefa `PENDING`                                 | `PUT /api/tasks/:id` `{ status: IN_PROGRESS }`  | `200`             | Status gravado `IN_PROGRESS`                 |
+| 10 | API05    | Tarefa `PENDING`                                 | `PUT` `{ status: CANCELLED }`                   | `200`             | Status gravado `CANCELLED`                   |
+| 11 | API05    | Tarefa `IN_PROGRESS`                             | `PUT` `{ status: COMPLETED }`                   | `200`             | Status gravado `COMPLETED`                   |
+| 12 | API05    | Tarefa `IN_PROGRESS`                             | `PUT` `{ status: CANCELLED }`                   | `200`             | Status gravado `CANCELLED`                   |
+| 13 | API05    | Tarefa `COMPLETED`                               | `PUT` `{ status: PENDING }`                     | `400`             | Tarefa inalterada                            |
+| 14 | API05    | Tarefa `CANCELLED`                               | `PUT` `{ status: IN_PROGRESS }`                 | `400`             | Tarefa inalterada                            |
+| 15 | API05    | Tarefa `PENDING`                                 | `PUT` `{ status: COMPLETED }`                   | `400`             | Tarefa inalterada                            |
+| 16 | API05    | Nenhuma tarefa                                   | `PUT /api/tasks/inexistente`                    | `404`             | Nenhum                                       |
+| 17 | API02    | Ana com 1 tarefa e Bruno sem tarefas             | `GET /api/users`                                | `200` com `count` e `tasks` | Nenhum (leitura) — *caso novo após sabotagem* |
+| 18 | API02    | Usuários criados em datas diferentes             | `GET /api/users`                                | `200`, mais recente primeiro | Nenhum (leitura) — *caso novo após sabotagem* |
+
+### Frontend (o "estado inicial" é a resposta definida no handler do MSW)
+
+| #  | Requisito | Handlers MSW                                      | Ação do usuário                          | Resultado esperado                                              |
+|----|-----------|---------------------------------------------------|------------------------------------------|-----------------------------------------------------------------|
+| 19 | RF08      | `GET` lista vazia; `POST` responde `201`          | Preencher Nome/Email e clicar em "Criar" | Corpo do POST = `{ name, email }` digitados                     |
+| 20 | RF08      | idem                                              | idem                                     | Formulário fechado                                              |
+| 21 | RF08      | `GET` passa a devolver o usuário criado           | idem                                     | Nova linha na tabela com nome, email e 0 tarefas                |
+| 22 | RF09      | `POST` responde `409`                             | Preencher e clicar em "Criar"            | Mensagem "Email já cadastrado"                                  |
+| 23 | RF09      | `POST` responde `409`                             | Preencher e clicar em "Criar"            | Formulário aberto, com os dados digitados                       |
+
+## 2. Prompts utilizados
+
+Backend:
+
+```
+Contexto: rotas DELETE /api/categories/:id, POST /api/categories e PUT /api/tasks/:id,
+contratos API03, API04 e API05 (regras RN01, RN02, RN03 e RN04) de docs/especificacao.md.
+
+Tarefa: escreva testes de integração em backend/tests/integration/categories.int.test.ts
+e backend/tests/integration/tasks.int.test.ts, seguindo o modelo de users.int.test.ts.
+
+Casos obrigatórios (definidos por mim): a tabela abaixo, com a coluna "Efeito no banco".
+<tabela do backend da seção 1>
+
+Restrições: siga o AGENTS.md (seção Testes de integração). Use request(app) e os helpers
+de helpers/db.ts. Não use vi.mock. Não altere src/. Se algum teste falhar, não mude o
+valor esperado: me avise qual regra foi violada.
+
+Saída: execute npm run test:integration e relacione cada teste a uma linha da tabela.
+```
+
+Frontend:
+
+```
+Contexto: componente frontend/src/components/Users.tsx, requisitos RF08 e RF09 e
+contrato API01 de docs/especificacao.md. Use Users.load.int.test.tsx como modelo.
+
+Tarefa: escreva testes em frontend/tests/integration/Users.create.int.test.tsx.
+
+Casos obrigatórios (definidos por mim): a tabela abaixo.
+<tabela do frontend da seção 1>
+
+Restrições: siga o AGENTS.md. Simule a API com MSW (server.use), sem vi.spyOn(api).
+As respostas seguem o contrato { success, data }. Verifique o corpo enviado no POST
+com await request.json() no handler. Use getByRole/getByLabelText e userEvent.
+Não altere src/.
+
+Saída: execute npm run test:integration e relacione cada teste a uma linha da tabela.
+```
+
+## 3. Revisão do teste gerado
+
+| Problema encontrado no teste gerado | Ajuste solicitado ou realizado |
+|-------------------------------------|--------------------------------|
+| O caso 10 (`PENDING → CANCELLED`) foi marcado com `it.fails` antes de executar, supondo o mesmo defeito do `canTransition` visto nos testes unitários. Na execução, a API aceitou a transição (200), o que está de acordo com a spec. | `it.fails` removido: o teste passa porque a API não valida transição nenhuma (ver defeito da API05). Um `it.fails` só deve ser usado depois de observar a falha. |
+| O teste do RF08 "envia o nome e o email..." esperava o novo usuário aparecer na lista antes de verificar o corpo do POST. Por isso falhava também na sabotagem de `fetchUsers()`, que não tem relação com o envio. | Passou a esperar a requisição chegar ao handler (`vi.waitFor`) e verificar só o corpo. |
+| O teste "fecha o formulário após a criação" também dependia da lista recarregada para fazer a verificação. | Passou a aguardar diretamente o fechamento do formulário. Agora a sabotagem do `fetchUsers()` derruba só o teste "recarrega a lista". |
+| A sabotagem "remover `include: { tasks }` de `getUsers`" não foi detectada: nenhum teste do backend verificava a API02. | Casos 17 e 18 adicionados à tabela e ao arquivo `users.list.int.test.ts`. |
+| Sem `globals: true` no Vitest, o DOM não é limpo entre os testes do frontend. | `afterEach(() => cleanup())` no arquivo, como nos testes unitários. |
+| Checklist conferido: sem `vi.mock` do Prisma nem `vi.spyOn(api)` (o `vi.spyOn` só silencia o `console`), status + corpo + efeito no banco em cada teste do backend, cenário criado no próprio teste (`resetDb()` no `beforeEach`), `testDatabase.ts` e URL do banco inalterados, handlers no formato do contrato, corpo do POST verificado. | Nenhum ajuste necessário. |
+
+## 4. Resultados
+
+- Backend (`npm run test:integration`): 18 testes criados (+ 2 de referência) | aprovados: 11 (+ 2) | reprovados: 7, marcados com `it.fails` (defeitos abaixo).
+- Frontend (`Users.create.int.test.tsx`): 5 testes criados | aprovados: 4 | reprovados: 1 (`it.fails` — RF09).
+- Suíte completa do frontend (`npm test`, unitários + integração): 22 testes, 21 aprovados e 1 `it.fails`.
+- Cobertura de linhas de `Users.tsx` (unitários + integração): 85,18 % (antes: 66,67 %).
+- **RF07 (aula 11):** o defeito foi corrigido no repositório do professor (commit `3a57228`, rótulos com `htmlFor`/`id`). Depois da sincronização, os testes do RF07 passaram a passar, e o `it.fails` foi trocado por `it`. O valor esperado não mudou.
+
+Sabotagem controlada (uma alteração por vez, sempre numa cópia do código, desfeita antes da próxima):
+
+| Sabotagem                                              | Arquivo                   | Regra | Detectada? | Testes que falharam |
+|--------------------------------------------------------|---------------------------|-------|------------|---------------------|
+| Remover a checagem `canDeleteCategory`                 | `categoryController.ts`   | API03 | Sim        | `impede excluir categoria com uma tarefa: 400 e mantém categoria e tarefa` |
+| Trocar o status `409` por `400`                        | `userController.ts`       | API01 | Sim        | `responde 409 ao repetir um email já cadastrado` (referência) |
+| Remover `include: { tasks: ... }` de `getUsers`        | `userController.ts`       | API02 | **Não** → depois dos casos 17 e 18: Sim | `responde 200 com count e a lista tasks de cada usuário` |
+| Remover `fetchUsers()` após salvar                     | `Users.tsx`               | RF08  | Sim        | `recarrega a lista e exibe o novo usuário na tabela` |
+
+## 5. Defeitos encontrados (divergências entre especificação e código)
+
+| Regra | Comportamento especificado | Comportamento observado | Teste que evidencia |
+|-------|----------------------------|-------------------------|---------------------|
+| API03 | Categoria inexistente: `404` | `500`: o controller compara a mensagem `'Record to delete does not exist'`, que não corresponde à mensagem do erro P2025 do Prisma 6 | `categories.int.test.ts` › `responde 404 para categoria inexistente` (`it.fails`) |
+| API04 / RN03 | Nome que coincide com um existente após normalizar: `409`, nada criado | `201`, categoria duplicada criada: a API não aplica `normalizeName`, só recusa nomes idênticos (restrição `unique` do banco) | `categories.int.test.ts` › `responde 409 e não cria categoria duplicada após normalizar: ...` (2 casos, `it.fails`) |
+| API05 / RN04 | Transição proibida pela RN01: `400`, tarefa inalterada | `200`, novo status gravado: `updateTask` não aplica `canTransition` | `tasks.int.test.ts` › `recusa a transição proibida de ...` (3 casos, `it.fails`) |
+| API05 | Tarefa inexistente: `404` | `500`: mesma causa da API03 (mensagem `'Record to update not found'`) | `tasks.int.test.ts` › `responde 404 para tarefa inexistente` (`it.fails`) |
+| RF09  | Resposta `409` ao criar: mensagem "Email já cadastrado" | Mensagem genérica "Erro ao salvar usuário" | `Users.create.int.test.tsx` › `exibe "Email já cadastrado" quando a API responde 409` (`it.fails`) |

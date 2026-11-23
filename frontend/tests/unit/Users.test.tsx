@@ -197,10 +197,9 @@ describe('Users — edição (RF06)', () => {
 })
 
 describe('Users — acessibilidade do formulário (RF07)', () => {
-  // DEFEITO (RF07): os <label> "Nome:" e "Email:" não estão associados aos campos
-  // (sem htmlFor/id), então getByLabelText não encontra os inputs.
-  // Testes mantidos conforme a especificação e marcados com it.fails até a correção.
-  it.fails.each([
+  // O defeito do RF07 (rótulos sem htmlFor/id), registrado na aula 11, foi corrigido
+  // no commit 3a57228 do repositório do professor; o teste voltou a ser um `it` comum.
+  it.each([
     ['Nome', 'text'],
     ['Email', 'email'],
   ])('localiza o campo %s pelo texto do rótulo', async (rotulo, tipo) => {
